@@ -1,0 +1,19 @@
+median_height_m,mean_height_m,stdev,nbsp, site_name,site_type,dist_to_river
+0.583,1.145,1.310,29,lloyd_butler,riparian,NA
+1.589,2.911,3.251,31,camp,riparian,NA
+9.062,7.465,4.471,31,hrna,riparian,NA
+0.111,0.641,1.286,31,shields,riparian,NA
+1.852,1.719,0.678,19,camp,lemon,near
+1.655,1.554,0.799,30,lloyd_butler,lemon,near
+2.187,2.010,0.904,9,limoneria,lemon,far
+0.739,1.384,2.207,21,limoneria,lemon,near
+2.377,2.198,1.992,13,pine_tree,lemon,far
+2.050,2.384,3.117,24,dos_hijos,lemon,far
+1.985,1.828,0.701,12,oso_del_norte,lemon,far
+1.284,1.347,1.057,19,amlap,avocado,far
+2.873,2.884,1.705,25,dos_hijos,avocado,far
+4.054,3.952,1.556,18,keeling,avocado,far
+2.795,2.618,0.916,24,king_king,avocado,near
+1.762,1.709,0.528,33,lloyd_butler,avocado,near
+5.004,4.809,2.145,18,boulder_creek,avocado,near
+4.046,3.890,1.099,7,limoneria,avocado,far
