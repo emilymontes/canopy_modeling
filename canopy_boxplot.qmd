@@ -1,0 +1,101 @@
+---
+title: ".laz file to boxplot canopy height (m)"
+format: html
+editor: visual
+---
+
+```{r}
+Sys.setenv(JAVA_HOME='C:\\Program Files\\Java\\jre7')
+```
+
+```{r}
+library(raster)
+library(sf)
+library(reshape)
+library(scales)
+library(lidR)
+library(terra)
+library(microbenchmark)
+library(mapview)
+library(tmaptools)
+library(tmap)
+library(ForestTools)
+library(ggplot2)
+library(lubridate)
+library(tidyverse)
+
+library(xlsx)
+
+```
+
+```{r}
+# Load LiDAR data and reduce point density
+las_lloyd_rip <- readLAS(files = "data/riparian/lloydbutler_rip_na.laz", filter = "-keep_random_fraction 0.4 -set_withheld_flag 0")
+col <- height.colors(50)
+```
+
+```{r}
+las = filter_duplicates(las) #filter out duplicated points if necessary. can use the function las_check() to see if there are any duplicated points in your point cloud
+
+las = filter_poi(las, Classification != LASNOISE) #remove noise from las file
+```
+
+```{r}
+#las is your las file, res is the resolution of the output, and tin() is a spatial interpolation algorithm
+dtm = rasterize_terrain(las, res = 1, tin())
+
+#plot the dtm
+plot(dtm, bg = "white", main = "DTM")
+```
+
+```{r}
+dsm = rasterize_canopy(las, res = 1, algorithm = dsmtin()) #las is your las file, res is the resolution of the output, and dsmtin() is a spatial interpolation algorithm
+
+plot(dsm)
+```
+
+```{r}
+nlas = normalize_height(las, res = 1, tin(), dtm = dtm) #normalize the height of the tile using the dtm
+```
+
+```{r}
+nlas <- normalize_height(las, knnidw())
+```
+
+```{r}
+nlas <- filter_poi(nlas, Z >= 0.01 & Z <= 40)
+```
+
+```{r}
+chm = rasterize_canopy(nlas, res = 1, algorithm = dsmtin()) #use the normalized height tile (nlas) to calculate the CHM
+
+chm[chm<0]=0 #some values could be below zero due to noise, so we remove them here
+tm_shape(chm)+
+tm_raster(style= "quantile", n=5, palette=get_brewer_pal("Greens", n=5, plot=FALSE))+
+tm_layout(legend.outside = TRUE)
+
+```
+
+```{r}
+plot(chm)
+```
+
+```{r}
+na.omit(chm)
+```
+
+```{r}
+chm <- as.data.frame(chm)
+
+```
+
+```{r}
+ggplot(chm, aes(y = Z)) + 
+  geom_boxplot() +
+  theme_classic()
+  
+```
+
+```{r}
+summary(chm)
+```

@@ -1,0 +1,348 @@
+---
+title: "laz_to_chm"
+format: html
+editor: visual
+---
+
+.laz file processing to canopy height model
+
+<https://tgoodbody.github.io/lidRtutorial/04_chm.html>
+
+<https://rpubs.com/manish1013/790959>
+
+<https://rpubs.com/jesseast/lidR4smarties>
+
+<https://r-lidar.github.io/lidRbook/itd-its.html>
+
+### Environment
+
+```{r}
+
+library(raster)
+library(sf)
+library(reshape)
+library(scales)
+library(lidR)
+library(terra)
+library(microbenchmark)
+library(mapview)
+library(tmaptools)
+library(tmap)
+library(ForestTools)
+library(ggplot2)
+library(lubridate)
+library(tidyverse)
+
+```
+
+### Data Preprocessing
+
+```{r}
+# Load LiDAR data and reduce point density
+las <- readLAS(files = "data/lemon/lloydbutler_lem_near.laz", filter = "-keep_random_fraction 0.4 -set_withheld_flag 0")
+col <- height.colors(50)
+```
+
+```{r}
+# Visualize the LiDAR point cloud
+plot(las)
+```
+
+```{r}
+las_check(las)
+```
+
+```{r}
+las = filter_duplicates(las) #filter out duplicated points if necessary. can use the function las_check() to see if there are any duplicated points in your point cloud
+
+las = filter_poi(las, Classification != LASNOISE) #remove noise from las file
+```
+
+```{r}
+# crs is getting or setting the projection of a ⁠LAS*⁠ object.
+lidR::crs(las) #check crs of the las 
+```
+
+## Digital Terrain Model (DTM)
+
+```{r}
+#las is your las file, res is the resolution of the output, and tin() is a spatial interpolation algorithm
+dtm = rasterize_terrain(las, res = 1, tin())
+
+#plot the dtm
+plot(dtm, bg = "white", main = "DTM")
+```
+
+## Digital Surface Model (DSM)
+
+```{r}
+dsm = rasterize_canopy(las, res = 1, algorithm = dsmtin()) #las is your las file, res is the resolution of the output, and dsmtin() is a spatial interpolation algorithm
+
+plot(dsm)
+```
+
+## **Height Normalization and the CHM**
+
+In order to calculate the CHM we first need to normalize our point cloud. Normalizing a point cloud makes the point cloud ground flat by removing terrain. Then we can use the rasterize_canopy() function on the normalized point cloud, similar to how we calculated the DSM.
+
+Note: When the original (non-normalized) point cloud with absolute elevations is used, the derived layer represents the elevation of the top of the canopy above sea level, and is referred to as DSM. So, to calculate the CHM, we need to get thee DSM of a normalized point cloud! The CHM can also be referred to as a normalized DSM or nDSM.
+
+```{r}
+nlas = normalize_height(las, res = 1, tin(), dtm = dtm) #normalize the height of the tile using the dtm
+```
+
+Point cloud normalization
+
+```{r}
+nlas <- normalize_height(las, knnidw())
+```
+
+```{r}
+filter_poi(nlas, Z >= 0.1 & Z <= 40)
+```
+
+All the ground points should be exactly 0. Let check it:
+
+```{r}
+hist(filter_ground(nlas)$Z, breaks = seq(-0.6, 0.6, 0.01), main = "", xlab = "Elevation")
+```
+
+```{r}
+
+```
+
+Calculate and plot the CHM of the tile
+
+```{r}
+chm = rasterize_canopy(nlas, res = 1, algorithm = dsmtin()) #use the normalized height tile (nlas) to calculate the CHM
+
+chm[chm<0]=0 #some values could be below zero due to noise, so we remove them here
+tm_shape(chm)+
+tm_raster(style= "quantile", n=5, palette=get_brewer_pal("Greens", n=5, plot=FALSE))+
+tm_layout(legend.outside = TRUE)
+plot(chm, breaks = c(0,1,3,5,7,9),
+     main = "Lidar Canopy Height Model",
+     col = c(rainbow(5))
+)
+```
+
+```{r}
+plot(chm)
+```
+
+Summary of CHM
+
+```{r}
+summary(chm)
+```
+
+```{r}
+hist(chm,
+     main = "Distribution of raster cell values in the CHM",
+     xlab = "Height (m)", #We can also use xlim wo limit our interest with respect to data
+     ylab = "Number of Pixels",
+     col = "red")
+```
+
+```{r}
+# write out the CHM in tiff format. 
+
+#writeRaster(chm,paste0(wd,"CHM_kingavo.tif"),"GTiff")
+```
+
+## Point to Raster Based Algorithm
+
+Code taken from <https://tgoodbody.github.io/lidRtutorial/04_chm.html>
+
+We demonstrate a simple method for generating Canopy Height Models (CHMs) that assigns the elevation of the highest point to each pixel at a 2 meter spatial resolution.
+
+```{r}
+# Generate the CHM using a simple point-to-raster based algorithm
+chm <- rasterize_canopy(las = nlas, res = 2, algorithm = p2r())
+
+# Visualize the CHM
+plot(chm, col = col)
+```
+
+In the first code chunk, we generate a CHM using a point-to-raster based algorithm. The `rasterize_canopy()` function with the `p2r()` algorithm assigns the elevation of the highest point within each grid cell to the corresponding pixel. The resulting CHM is then visualized using the `plot()` function.
+
+```{r}
+# Compute max height using pixel_metrics
+chm <- pixel_metrics(las = nlas, func = ~max(Z), res = 2)
+
+# Visualize the CHM
+plot(chm, col = col)
+```
+
+The code chunk above shows that the point-to-raster based algorithm is equivalent to using `pixel_metrics` with a function that computes the maximum height (`max(Z)`) within each grid cell. The resulting CHM is visualized using the `plot()` function.
+
+```{r}
+# However, the rasterize_canopy algorithm is optimized
+microbenchmark::microbenchmark(canopy = rasterize_canopy(las = las, res = 1, algorithm = p2r()),
+                               metrics = pixel_metrics(las = las, func = ~max(Z), res = 1),
+                               times = 10)
+```
+
+The above code chunk uses `microbenchmark::microbenchmark()` to compare the performance of the `rasterize_canopy()` function with `p2r()` algorithm and `pixel_metrics()` function with `max(Z)` for maximum height computation. It demonstrates that the `rasterize_canopy()` function is optimized for generating CHMs.
+
+```{r}
+# Make spatial resolution 1 m
+chm <- rasterize_canopy(las = nlas, res = 1, algorithm = p2r())
+plot(chm, col = col)
+```
+
+By increasing the resolution of the CHM (reducing the grid cell size), we get a more detailed representation of the canopy, but also have more empty pixels.
+
+```{r}
+# Using the 'subcircle' option turns each point into a disc of 8 points with a radius r
+chm <- rasterize_canopy(las = nlas, res = 0.5, algorithm = p2r(subcircle = 0.15))
+plot(chm, col = col)
+```
+
+The `rasterize_canopy()` function with the `p2r()` algorithm allows the use of the `subcircle`option, which turns each LiDAR point into a disc of 8 points with a specified radius. This can help to capture more fine-grained canopy details in the resulting CHM.
+
+```{r}
+# Increasing the subcircle radius, but it may not have meaningful results
+chm <- rasterize_canopy(las = nlas, res = 0.5, algorithm = p2r(subcircle = 0.8))
+plot(chm, col = col)
+```
+
+Increasing the `subcircle` radius may not necessarily result in meaningful CHMs, as it could lead to over-smoothing or loss of important canopy information.
+
+```{r}
+# We can fill empty pixels using TIN interpolation
+chm <- rasterize_canopy(las = nlas, res = 0.5, algorithm = p2r(subcircle = 0.15, na.fill = tin()))
+plot(chm, col = col)
+```
+
+The `p2r()` algorithm also allows filling empty pixels using TIN (Triangulated Irregular Network) interpolation, which can help in areas with sparse LiDAR points to obtain a smoother CHM.
+
+### Triangulation Based Algorithm
+
+We demonstrate a triangulation-based algorithm for generating CHMs.
+
+```{r}
+# Triangulation of first returns to generate the CHM
+chm <- rasterize_canopy(las = nlas, res = 1, algorithm = dsmtin())
+plot(chm, col = col)
+```
+
+The `rasterize_canopy()` function with the `dsmtin()` algorithm generates a CHM by performing triangulation on the first returns from the LiDAR data. The resulting CHM represents the surface of the canopy.
+
+```{r}
+# Increasing the resolution results in a more detailed CHM
+chm <- rasterize_canopy(las = nlas, res = 0.5, algorithm = dsmtin())
+plot(chm, col = col)
+```
+
+Increasing the resolution of the CHM using the `res` argument provides a more detailed representation of the canopy, capturing finer variations in the vegetation.
+
+```{r}
+# Using the Khosravipour et al. 2014 pit-free algorithm with specified thresholds and maximum edge length
+thresholds <- c(0, 5, 10, 20, 25, 30)
+max_edge <- c(0, 1.35)
+chm <- rasterize_canopy(las = nlas, res = 0.5, algorithm = pitfree(thresholds, max_edge))
+plot(chm, col = col)
+```
+
+The `rasterize_canopy` function can also use the Khosravipour et al. 2014 pit-free algorithm with specified height thresholds and a maximum edge length to generate a CHM. This algorithm aims to correct depressions in the CHM surface.
+
+```{r}
+# Using the 'subcircle' option with the pit-free algorithm
+chm <- rasterize_canopy(las = nlas, res = 0.5, algorithm = pitfree(thresholds, max_edge, 0.1))
+plot(chm, col = col)
+```
+
+### Post-Processing
+
+```{r}
+# Post-process the CHM using the 'terra' package and focal() function for smoothing
+ker <- matrix(1, 3, 3)
+schm <- terra::focal(chm, w = ker, fun = mean, na.rm = TRUE)
+
+# Visualize the smoothed CHM
+plot(schm, col = col)
+```
+
+### Local Maximum Filter with fixed windows size
+
+```{r}
+ttops <- locate_trees(las, lmf(ws = 5))
+
+plot(chm, col = height.colors(50))
+plot(sf::st_geometry(ttops), add = TRUE, pch = 3)
+```
+
+```{r}
+summary(nlas)
+```
+
+```{r}
+ttops_3m <- locate_trees(las, lmf(ws = 3))
+ttops_11m <- locate_trees(las, lmf(ws = 11))
+
+par(mfrow=c(1,2))
+plot(chm, col = height.colors(50))
+plot(sf::st_geometry(ttops_3m), add = TRUE, pch = 3)
+plot(chm, col = height.colors(50))
+plot(sf::st_geometry(ttops_11m), add = TRUE, pch = 3)
+```
+
+### Cross sections 2D rendering
+
+To better visualize the vertical structure of a point cloud, investigate classification results, or compare results of different interpolation routines, a cross section can be plotted. To do that we first need to decide where the cross section is located (i.e. define the beginning and the end) and specify it’s width. The point cloud can then be clipped and the `X` and `Z` coordinates used to create the plot.
+
+For example, to create a 100 m long cross section we may define the beginning and the end and then use `clip_transect()` function to subset the point cloud.
+
+```{r}
+#p1 <- c(273357, 5274357) #x cords
+#p2 <- c(273542, 5274542) #z cords
+las_tr <- clip_transect(las, p1, p2, width = 4, xz = TRUE)
+```
+
+Rendering can be achieved with base plot or `ggplot2`. Notice the use of `@data` to extract the `data.frame` from the `LAS` object.
+
+```{r}
+library(ggplot2)
+
+ggplot(nlas@data, aes(X,Z, color = Z)) + #using normalized height data frame
+  geom_point(size = 0.5) + 
+  coord_equal() + 
+  theme_minimal() +
+  scale_color_gradientn(colours = height.colors(50))
+```
+
+```{r}
+DSM <- nlas@data[ , .(Z = max(Z)), by = list(X = plyr::round_any(X, 1))]
+
+ggplot(nlas@data) +
+  aes(X,Z, color = Z) +
+  geom_point(size = 0.5) + 
+  geom_line(data = DSM, color = "black") +
+  coord_equal() + 
+  theme_minimal() +
+  scale_color_gradientn(colours = height.colors(50))
+```
+
+The two steps required to create a cross section (clipping the point cloud and plotting) can be combined. Below we create a simple function that will become handy at multiple occasions throughout this book. To make this function even easier to use we will specify the default values for `p1` and `p2` so that the cross section is located in the centre of the point cloud, along the X-axis. The default width will be 4 m.
+
+```{r}
+plot_crossection <- function(nlas,
+                             p1 = c(min(nlas@data$X), mean(nlas@data$Y)),
+                             p2 = c(max(nlas@data$X), mean(nlas@data$Y)),
+                             width = 4, colour_by = NULL)
+{
+  colour_by <- rlang::enquo(colour_by)
+  data_clip <- clip_transect(nlas, p1, p2, width)
+  p <- ggplot(data_clip@data, aes(X,Z)) + geom_point(size = 0.5) + coord_equal() + theme_minimal()
+
+  if (!is.null(colour_by))
+    p <- p + aes(color = !!colour_by) + labs(color = "")
+
+  return(p)
+}
+```
+
+```{r}
+plot_crossection(nlas, colour_by = factor(Classification))
+```
