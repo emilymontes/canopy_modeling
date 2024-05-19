@@ -1,0 +1,223 @@
+---
+title: "chm"
+format: html
+editor: visual
+---
+
+```{r}
+library(ggplot2)
+library(tidymodels)
+library(tidyverse)
+library(skimr)
+library(emmeans)
+library(cowplot)
+```
+
+```{r}
+model <- read.csv("data/median_mean_stdev_nbsp.csv")
+```
+
+```{r}
+glimpse(model)
+```
+
+```{r}
+model$site_type <- ifelse(model$site_type == "avocado", "Avocado Orchard", model$site_type)
+model$site_type <- ifelse(model$site_type == "lemon", "Lemon Orchard", model$site_type)
+model$site_type <- ifelse(model$site_type == "riparian", "Riparian", model$site_type)
+```
+
+### Mean height (m) across site types
+
+```{r}
+#boxplot
+box_height_habitat <- model |> 
+  ggplot(aes(y = mean_height_m, x = site_type)) +
+  geom_boxplot() +
+  # add big red point for each mean
+  stat_summary(
+    fun = "mean",
+    color = "red",
+    size = 2,
+    geom = "point") +
+  labs(x = "Habitat Type", y = "Vegetation Height (m)") +
+  theme_classic() +
+    theme(legend.position="none", text = element_text(size = 12)) +
+   scale_y_continuous(limits = c(0, 8),
+                      breaks = seq(0, 8, 1.5)) 
+
+box_height_habitat
+
+ggsave("outputs/box_height_habitat.png",
+  box_height_habitat,
+  width = 7,
+  height = 4.5,
+  dpi = 600
+)
+```
+
+### Median height (m) across site types
+
+```{r}
+#boxplot
+model |>
+  ggplot(aes(x = site_type, y = median_height_m)) +
+  geom_boxplot() +
+  # add big red point for each mean
+  stat_summary(
+    fun = "mean",
+    color = "red",
+    size = 2,
+    geom = "point") +
+    labs(x = "Habitat Type", y = "Median Vegetation Height (m)") +
+    theme_classic()
+```
+
+### Species richness across site types (grouped by prox to river)
+
+```{r}
+#boxplot
+boxplot_nbsp_habitat <- model |>
+  ggplot(aes(x = site_type, y = nbsp, color = dist_to_river)) +
+  geom_boxplot() +
+    labs(x = "Habitat Type", y = "Species Richness", color = "Proximity to River") +
+    theme_classic() +
+    theme(legend.position="none", text = element_text(size = 12))
+
+boxplot_nbsp_habitat
+
+ggsave(
+  "outputs/box_nbsp_habitat.png",
+  boxplot_nbsp_habitat,
+  width = 7,
+  height = 4.5,
+  dpi = 600
+)
+```
+
+### LM (mean vegetation height \~ habitat type)
+
+```{r}
+lm_mean_habitat <- lm(mean_height_m ~ site_type, data = model)
+lm_mean_habitat
+```
+
+#### Coefficient Table
+
+```{r}
+lm_mean_habitat_coef <- tidy(lm_mean_habitat, conf.int = TRUE)
+lm_mean_habitat_coef
+```
+
+#### Emmeans
+
+```{r}
+lm_mean_habitat_emm <- emmeans(lm_mean_habitat, ~ site_type)
+lm_mean_habitat_emm
+```
+
+#### Points and means plot w/ model 95% CIs
+
+```{r}
+plot_lm_mean_habitat_emm <- model |>
+ggplot(aes(x = site_type, y = mean_height_m, color = site_type)) +
+  geom_jitter(width = 0.1, alpha = 1) +
+  ylab("Mean Vegetation Height (m)") +
+  xlab("Habitat Type") +
+  #use emm object as 2nd data table to plot 95% CIs
+  geom_crossbar(data = as_tibble(lm_mean_habitat_emm), 
+                aes(y = emmean,
+                    ymin = lower.CL,
+                    ymax = upper.CL), 
+                width = 0.1,
+                color = "black") +
+  scale_y_continuous(limits = c(0, 8),
+                      breaks = seq(0, 8, 1.5)) +
+  theme_classic() +
+  theme(legend.position="none", text = element_text(size = 12))
+
+plot_lm_mean_habitat_emm
+
+ggsave(
+  "outputs/plot_lm_mean_habitat_emm.png",
+  plot_lm_mean_habitat_emm,
+  width = 7,
+  height = 4.5,
+  dpi = 600)
+```
+
+### LM (median vegetation height \~ habitat type)
+
+```{r}
+lm_median_habitat <- lm(median_height_m ~ site_type, data = model)
+lm_median_habitat
+```
+
+#### Coefficient Table
+
+```{r}
+lm_median_habitat_coef <- tidy(lm_median_habitat, conf.int = TRUE)
+lm_median_habitat_coef
+```
+
+#### Emmeans
+
+```{r}
+lm_median_habitat_emm <- emmeans(lm_median_habitat, ~ site_type)
+lm_median_habitat_emm
+```
+
+#### Points and median plot (model) and 95% CIs
+
+```{r}
+plot_lm_median_habitat_emm <- model |>
+ggplot(aes(x = site_type, y = median_height_m, color = site_type)) +
+  geom_jitter(width = 0.1, alpha = 1) +
+  ylab("Median Vegetation Height (m)") +
+  xlab("Habitat Type") +
+  #use emm object as 2nd data table to plot 95% CIs
+  geom_crossbar(data = as_tibble(lm_median_habitat_emm), 
+                aes(y = emmean,
+                    ymin = lower.CL,
+                    ymax = upper.CL), 
+                width = 0.1,
+                color = "black") +
+  scale_y_continuous(limits = c(0, 8),
+                      breaks = seq(0, 8, 1.5)) +
+  theme_classic() +
+  theme(legend.position="none", text = element_text(size = 12))
+
+plot_lm_median_habitat_emm
+
+ggsave(
+  "outputs/plot_lm_median_habitat_emm.png",
+  plot_lm_median_habitat_emm,
+  width = 7,
+  height = 4.5,
+  dpi = 600)
+```
+
+### nbsp by mean veg height (m)
+
+```{r}
+line_nbsp_mean <- model |> 
+  ggplot(aes(x=mean_height_m, y=nbsp, color=site_type)) +
+    geom_point() +
+  geom_smooth(span = 5, se = FALSE) +
+  xlab("Mean Vegetation Height (m)") +
+  ylab("Species Richness") +
+  labs(color = "Habitat Type")+
+  scale_x_continuous(limits = c(1, 8),
+                      breaks = seq(1, 8, 1.5)) +
+  theme_classic() +
+  theme(text = element_text(size = 12))
+
+line_nbsp_mean
+
+ggsave(
+  "outputs/line_nbsp_mean.png",
+  line_nbsp_mean,
+  width = 7,
+  height = 4.5,
+  dpi = 600)
+```
